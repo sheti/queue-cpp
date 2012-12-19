@@ -1,0 +1,6 @@
+log: 'queue.log'
+pid: 'queue.pid'
+socket: '/tmp/myqueue'
+tasks:
+  test: 'echo Hello world'
+
