@@ -12,9 +12,10 @@
 #include <pthread.h>
 #include <ctime>
 #include <sys/stat.h>
-#define BUF_SIZE 256
+#include <signal.h>
+#define BUF_SIZE 5
 
-struct thread_arg {
+struct start_arg {
 	std::string task_name;
 	std::string command;
 	std::map<std::string,std::string> heads;
@@ -61,12 +62,97 @@ void log(std::string str) {
 }
 
 static void *start_com(void *vptr_args) {
-	log(MakeString() << "Start child: \"" << ((thread_arg *)vptr_args)->task_name << "\" number " << ((thread_arg *)vptr_args)->num);
-	std::string command = ((thread_arg *)vptr_args)->command;
-	int num = ((thread_arg *)vptr_args)->num;
-	delete (thread_arg *)vptr_args;
+	log(MakeString() << "Start child: \"" << ((start_arg *)vptr_args)->task_name << "\" number " << ((start_arg *)vptr_args)->num);
+	std::string command = ((start_arg *)vptr_args)->command;
+	int num = ((start_arg *)vptr_args)->num;
+	delete (start_arg *)vptr_args;
 	int return_value = system(command.c_str());
 	log(MakeString() << "Child number " << num << " exited with value " << return_value);
+}
+
+struct accept_arg {
+	int sock;
+	pthread_t *thread;
+	int *num;
+	std::map<std::string,std::string> *tasks;
+};
+
+static void *accept_com(void *vptr_args) {
+	char buf[BUF_SIZE];
+	std::string heads_str = "";
+	int bytes;
+	std::map<std::string,std::string> *tasks = ((accept_arg *)vptr_args)->tasks;
+	std::map<std::string,std::string> heads;
+	std::map<std::string,std::string>::iterator heads_it;
+	std::map<std::string,std::string>::iterator tasks_it;
+
+	while( (bytes = recv(((accept_arg *)vptr_args)->sock, buf, sizeof(buf), 0)) > 0) {
+		if(bytes <= 0)
+			return (void *)EXIT_FAILURE;
+		if(bytes >= 2) {
+			if(buf[bytes - 1] == '\n' && buf[bytes - 2] == '\n') {
+				heads_str.append("\n");
+				break;
+			} else
+				heads_str.append(buf, bytes);
+		} else
+			heads_str.append(buf, bytes);
+	}
+	close(((accept_arg *)vptr_args)->sock);
+	
+	std::size_t head_start_pos = 0, head_end_pos, colon_pos;
+	while( (head_end_pos = heads_str.find("\n", head_start_pos)) != std::string::npos) {
+		colon_pos = heads_str.find(":", head_start_pos);
+		if (colon_pos != std::string::npos) {
+			std::string head_name = heads_str.substr(head_start_pos, colon_pos - head_start_pos);
+			head_name = trim(head_name);
+			std::string head_value = heads_str.substr(colon_pos + 1, head_end_pos - colon_pos);
+			head_value = trim(head_value);
+			heads.insert(std::pair<std::string,std::string>(head_name, head_value));
+		}
+		head_start_pos = head_end_pos + 1;
+	}
+	int *num = ((accept_arg *)vptr_args)->num;
+	if(heads.size() > 0)  {
+		if( (heads_it = heads.find("Exec")) != heads.end() ) {
+			if( (tasks_it = tasks->find((*heads_it).second)) != tasks->end()) {
+				struct start_arg *sa = new start_arg;
+				sa->task_name = (*tasks_it).first;
+				sa->command = (*tasks_it).second;
+				sa->heads = heads;
+				*num += 1;
+				sa->num = *num;
+				pthread_create(((accept_arg *)vptr_args)->thread, NULL, start_com, sa);
+			}
+		}
+	}
+	delete (accept_arg *)vptr_args;
+}
+
+struct listen_arg {
+	int sock;
+	pthread_t *thread;
+	std::map<std::string,std::string> *tasks;
+};
+
+static void *listen_com(void *vptr_args)  {
+	int sock = ((listen_arg *)vptr_args)->sock, sock_acpt;
+	pthread_t *thread = ((listen_arg *)vptr_args)->thread;
+	int num = 0;
+	while(1) {
+		if( (sock_acpt = accept(sock, NULL, NULL)) < 0 ) 
+		{
+			log("Accept failed");
+			delete (listen_arg *)vptr_args;
+			return (void *)EXIT_FAILURE;
+		}
+		struct accept_arg *aa = new accept_arg;
+		aa->sock = sock_acpt;
+		aa->thread = thread;
+		aa->num = &num;
+		aa->tasks = ((listen_arg *)vptr_args)->tasks;
+		pthread_create(thread, NULL, accept_com, aa);
+	}
 }
 
 int main() {
@@ -109,7 +195,7 @@ int main() {
 	std::clog.rdbuf(outlog.rdbuf());
 
 	unlink(sSocket.c_str());
-	int sock = socket(AF_UNIX, SOCK_DGRAM, 0);
+	int sock = socket(AF_UNIX, SOCK_STREAM, 0);
 	struct sockaddr srvr_name;
 	if (sock < 0) {
 		log("Socket failed");
@@ -121,63 +207,44 @@ int main() {
 		log("Bind failed");
 		return EXIT_FAILURE;
 	}
+	if(listen(sock, 3) < 0) {
+		log("Listen failed");
+		return EXIT_FAILURE;
+	}
 
 	chmod(sSocket.c_str(), S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
 
-	char buf[BUF_SIZE];
-	std::string head;
-	std::map<std::string,std::string> heads;
-	std::map<std::string,std::string>::iterator heads_it;
-	std::map<std::string,std::string>::iterator tasks_it;
-	pthread_t thread;
-	int tasck_i = 0;
-	int bytes, ln_count;
 	log("Queue start");
-	while(1) {
-		bytes = recvfrom(sock, buf, sizeof(buf), 0, NULL, NULL);
-		if(bytes < 0) 
-			goto exit;
-		ln_count = 0;
-		head.clear();
-		heads.clear();
-		for(int i = 0; i < bytes; i++) {
-			if(buf[i] == '\n') {
-				ln_count += 1;
-				if(ln_count == 2)
-					break;
-				// Разделение параметров
-				if(ln_count == 1) {
-					std::size_t found_pos = head.find(':');
-					if (found_pos != std::string::npos) {
-						std::string head_name = head.substr(0, found_pos);
-						head_name = trim(head_name);
-						std::string head_value = head.substr(found_pos + 1, head.length());
-						head_value = trim(head_value);
-						heads.insert(std::pair<std::string,std::string>(head_name, head_value));
-					}
-					if(head.compare("exit") == 0)
-						goto exit;
-					head.clear();
-				}
-			} else {
-				head += buf[i];
-				ln_count = 0;
-			}
-		}
-		if(heads.size() > 0)  {
-			if( (heads_it = heads.find("Exec")) != heads.end() ) {
-				if( (tasks_it = tasks.find((*heads_it).second)) != tasks.end()) {
-					struct thread_arg *ta = new thread_arg;
-					ta->task_name = (*tasks_it).first;
-					ta->command = (*tasks_it).second;
-					ta->heads = heads;
-					ta->num = ++tasck_i;
-					pthread_create(&thread, NULL, start_com, ta);
-				}
-			}
+	pthread_t thread;
+
+	struct listen_arg *la = new listen_arg;
+	la->sock = sock;
+	la->thread = &thread;
+	la->tasks = &tasks;
+	pthread_create(&thread, NULL, listen_com, la);
+	
+	sigset_t sigset;
+    siginfo_t siginfo;
+	// настраиваем сигналы которые будем обрабатывать
+    sigemptyset(&sigset);
+    // сигнал остановки процесса пользователем
+    sigaddset(&sigset, SIGQUIT);
+    // сигнал для остановки процесса пользователем с терминала
+    sigaddset(&sigset, SIGINT);
+    // сигнал запроса завершения процесса
+    sigaddset(&sigset, SIGTERM);
+    sigprocmask(SIG_BLOCK, &sigset, NULL);
+	int exit_status = 1;
+	while(exit_status) {
+		sigwaitinfo(&sigset, &siginfo);
+		switch(siginfo.si_signo) {
+			case SIGQUIT:
+			case SIGINT:
+			case SIGTERM:
+				exit_status = 0;
+				break;
 		}
 	}
-	exit:
 	close(sock);
 	unlink(sSocket.c_str());
 	log("Queue stop");
