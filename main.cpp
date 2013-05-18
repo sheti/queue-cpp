@@ -224,16 +224,16 @@ int main() {
 	pthread_create(&thread, NULL, listen_com, la);
 	
 	sigset_t sigset;
-    siginfo_t siginfo;
-	// настраиваем сигналы которые будем обрабатывать
-    sigemptyset(&sigset);
-    // сигнал остановки процесса пользователем
-    sigaddset(&sigset, SIGQUIT);
-    // сигнал для остановки процесса пользователем с терминала
-    sigaddset(&sigset, SIGINT);
-    // сигнал запроса завершения процесса
-    sigaddset(&sigset, SIGTERM);
-    sigprocmask(SIG_BLOCK, &sigset, NULL);
+	siginfo_t siginfo;
+	// РЅР°СЃС‚СЂР°РёРІР°РµРј СЃРёРіРЅР°Р»С‹ РєРѕС‚РѕСЂС‹Рµ Р±СѓРґРµРј РѕР±СЂР°Р±Р°С‚С‹РІР°С‚СЊ
+	sigemptyset(&sigset);
+	// СЃРёРіРЅР°Р» РѕСЃС‚Р°РЅРѕРІРєРё РїСЂРѕС†РµСЃСЃР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј
+	sigaddset(&sigset, SIGQUIT);
+	// СЃРёРіРЅР°Р» РґР»СЏ РѕСЃС‚Р°РЅРѕРІРєРё РїСЂРѕС†РµСЃСЃР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј СЃ С‚РµСЂРјРёРЅР°Р»Р°
+	sigaddset(&sigset, SIGINT);
+	// СЃРёРіРЅР°Р» Р·Р°РїСЂРѕСЃР° Р·Р°РІРµСЂС€РµРЅРёСЏ РїСЂРѕС†РµСЃСЃР°
+	sigaddset(&sigset, SIGTERM);
+	sigprocmask(SIG_BLOCK, &sigset, NULL);
 	int exit_status = 1;
 	while(exit_status) {
 		sigwaitinfo(&sigset, &siginfo);
