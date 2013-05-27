@@ -144,7 +144,7 @@ static void *listen_com(void *vptr_args)  {
 		{
 			log("Accept failed");
 			delete (listen_arg *)vptr_args;
-			return (void *)EXIT_FAILURE;
+			break;
 		}
 		struct accept_arg *aa = new accept_arg;
 		aa->sock = sock_acpt;
@@ -153,6 +153,8 @@ static void *listen_com(void *vptr_args)  {
 		aa->tasks = ((listen_arg *)vptr_args)->tasks;
 		pthread_create(thread, NULL, accept_com, aa);
 	}
+	raise(SIGTERM);
+	return (void *)EXIT_FAILURE;
 }
 
 int main() {
