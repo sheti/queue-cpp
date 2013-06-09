@@ -123,6 +123,8 @@ static void *accept_com(void *vptr_args) {
 				*num += 1;
 				sa->num = *num;
 				pthread_create(((accept_arg *)vptr_args)->thread, NULL, start_com, sa);
+			} else {
+				log(MakeString() << "Error command: " << (*heads_it).second);
 			}
 		}
 	}
