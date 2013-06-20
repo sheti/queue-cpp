@@ -91,8 +91,7 @@ static void *accept_com(void *vptr_args) {
 			return (void *)EXIT_FAILURE;
 		if(bytes >= 2) {
 			if(buf[bytes - 1] == '\n' && buf[bytes - 2] == '\n') {
-				heads_str.append(buf, bytes - 2);
-				heads_str.append("\n");
+				heads_str.append(buf, bytes - 1);
 				break;
 			} else
 				heads_str.append(buf, bytes);
@@ -127,6 +126,8 @@ static void *accept_com(void *vptr_args) {
 			} else {
 				log(MakeString() << "Error command: " << (*heads_it).second);
 			}
+		} else {
+			log(MakeString() << "Error. Exec command not found");
 		}
 	}
 	delete (accept_arg *)vptr_args;
