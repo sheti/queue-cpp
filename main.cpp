@@ -127,7 +127,7 @@ static void *accept_com(void *vptr_args) {
 				log(MakeString() << "Error command: " << (*heads_it).second);
 			}
 		} else {
-			log(MakeString() << "Error. Exec command not found");
+			log("Error. Exec command not found");
 		}
 	}
 	delete (accept_arg *)vptr_args;
