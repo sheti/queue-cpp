@@ -15,6 +15,8 @@
 #include <signal.h>
 #define BUF_SIZE 5
 
+std::map<std::string,std::string> tasks;
+
 struct start_arg {
 	std::string task_name;
 	std::string command;
@@ -74,14 +76,14 @@ struct accept_arg {
 	int sock;
 	pthread_t *thread;
 	int *num;
-	std::map<std::string,std::string> *tasks;
+	//std::map<std::string,std::string> tasks;
 };
 
 static void *accept_com(void *vptr_args) {
 	char buf[BUF_SIZE];
 	std::string heads_str = "";
 	int bytes;
-	std::map<std::string,std::string> *tasks = ((accept_arg *)vptr_args)->tasks;
+	//std::map<std::string,std::string> tasks = ((accept_arg *)vptr_args)->tasks;
 	std::map<std::string,std::string> heads;
 	std::map<std::string,std::string>::iterator heads_it;
 	std::map<std::string,std::string>::iterator tasks_it;
@@ -115,7 +117,7 @@ static void *accept_com(void *vptr_args) {
 	int *num = ((accept_arg *)vptr_args)->num;
 	if(heads.size() > 0)  {
 		if( (heads_it = heads.find("Exec")) != heads.end() ) {
-			if( (tasks_it = tasks->find((*heads_it).second)) != tasks->end()) {
+			if( (tasks_it = tasks.find((*heads_it).second)) != tasks.end()) {
 				struct start_arg *sa = new start_arg;
 				sa->task_name = (*tasks_it).first;
 				sa->command = (*tasks_it).second;
@@ -136,7 +138,7 @@ static void *accept_com(void *vptr_args) {
 struct listen_arg {
 	int sock;
 	pthread_t *thread;
-	std::map<std::string,std::string> *tasks;
+	//std::map<std::string,std::string> tasks;
 };
 
 static void *listen_com(void *vptr_args)  {
@@ -154,7 +156,7 @@ static void *listen_com(void *vptr_args)  {
 		aa->sock = sock_acpt;
 		aa->thread = thread;
 		aa->num = &num;
-		aa->tasks = ((listen_arg *)vptr_args)->tasks;
+		//aa->tasks = ((listen_arg *)vptr_args)->tasks;
 		pthread_create(thread, NULL, accept_com, aa);
 	}
 	raise(SIGTERM);
@@ -165,7 +167,7 @@ int main() {
 	std::string sLog;
 	std::string sPid;
 	std::string sSocket;
-	std::map<std::string,std::string> tasks;
+	
   
 	try {
 		YAML::Node config = YAML::LoadFile("/etc/queue.conf.yaml");
@@ -218,17 +220,22 @@ int main() {
 		return EXIT_FAILURE;
 	}
 
-	chmod(sSocket.c_str(), S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
-
+	int chmod_rez = chmod(srvr_name.sa_data, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
+	if(chmod_rez == -1) {
+		log(MakeString() << "Chmod error: " << strerror(errno));
+		close(sock);
+		unlink(sSocket.c_str());
+		return EXIT_FAILURE;
+	}
 	log("Queue start");
 	pthread_t thread;
 
 	struct listen_arg *la = new listen_arg;
 	la->sock = sock;
 	la->thread = &thread;
-	la->tasks = &tasks;
+	//la->tasks = tasks;
 	pthread_create(&thread, NULL, listen_com, la);
-	
+
 	sigset_t sigset;
 	siginfo_t siginfo;
 	// настраиваем сигналы которые будем обрабатывать
@@ -257,3 +264,4 @@ int main() {
 	outlog.close();
 	return EXIT_SUCCESS;
 }
+
