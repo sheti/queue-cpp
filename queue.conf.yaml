@@ -1,4 +1,5 @@
-log: 'queue.log'
+filelog: 'queue.log'
+syslog: true
 pid: 'queue.pid'
 socket: '/tmp/myqueue'
 tasks:

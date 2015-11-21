@@ -10,10 +10,12 @@
 #include <errno.h>
 #include <ctime>
 #include <sys/stat.h>
+#include <syslog.h>
 #define BUF_SIZE 5
 
 std::map<std::string,std::string> tasks;
-std::string slog;
+std::string cFilelog = "";
+bool cSyslog = false;
 
 class MakeString {
 	public:
@@ -42,15 +44,7 @@ std::string& trim(std::string& s){
 	return s;
 }
 
-void log(std::string str) {
-	// Открывает Log-файл
-	std::ofstream outlog;
-	try {
-		outlog.open(slog.c_str(), std::ios_base::app);
-	} catch (std::ofstream::failure e) {
-		std::cerr << "Exception opening log file" << std::endl;
-		return;
-	}
+void log(std::string str, int priority) {
 	time_t rawtime;
 	struct tm * timeinfo;
 	char buffer [80];
@@ -59,8 +53,24 @@ void log(std::string str) {
 	timeinfo = localtime(&rawtime);
 
 	strftime(buffer, 80, "[%d-%m-%Y %X] ", timeinfo);
-	outlog << buffer << str << std::endl;
-	outlog.close();
+	
+	// Открывает Log-файл
+	if(cFilelog.size() > 0) {
+		std::ofstream outlog;
+		try {
+			outlog.open(cFilelog.c_str(), std::ios_base::app);
+		} catch (std::ofstream::failure e) {
+			std::cerr << "Exception opening log file" << std::endl;
+			return;
+		}
+		outlog << buffer << str << std::endl;
+		outlog.close();
+	}
+	
+	//Пишем в syslog
+	if(cSyslog) {
+		syslog(priority, str.c_str());
+	} 
 }
 
 void accept_command() {
@@ -93,13 +103,13 @@ void accept_command() {
 			if( strcmp(head_name.c_str(), "Exec") == 0 ) {
 				if( (tasks_it = tasks.find(head_value.c_str())) != tasks.end()) {
 					// Старт комманды
-					log(MakeString() << "Start child: \"" << (*tasks_it).first << "\"");
+					log(MakeString() << "Start child: \"" << (*tasks_it).first << "\"", LOG_INFO);
 					std::string command = (*tasks_it).second;
 					int return_value = system(command.c_str());
-					log(MakeString() << "Child: \"" << (*tasks_it).first << "\" exited with value " << return_value);
+					log(MakeString() << "Child: \"" << (*tasks_it).first << "\" exited with value " << return_value, LOG_INFO);
 					// --
 				} else {
-					log(MakeString() << "Error command: " << head_value);
+					log(MakeString() << "Error command: " << head_value, LOG_ERR);
 				}
 			}
 		}
@@ -110,7 +120,10 @@ void accept_command() {
 int main() {
 	try {
 		YAML::Node config = YAML::LoadFile("/etc/queue.conf.yaml");
-		slog = config["log"].as<std::string>();
+		if(config["filelog"])
+			cFilelog = config["filelog"].as<std::string>();
+		if(config["syslog"])	
+			cSyslog = config["syslog"].as<bool>();
 		YAML::Node tasks_node = config["tasks"];
 
 		for(YAML::const_iterator it=tasks_node.begin();it!=tasks_node.end();++it) {
@@ -119,10 +132,15 @@ int main() {
 	} catch(YAML::ParserException& e) {
 		std::cerr << e.what() << std::endl;
 	}
-	
-	log("Queue start");
+	if(cSyslog) {
+		openlog("Queue", 0, LOG_DAEMON);
+	}
+	log("Queue start", LOG_INFO);
 	accept_command();
-	log("Queue stop");
+	log("Queue stop", LOG_INFO);
+	if(cSyslog) {
+		closelog();
+	}
 	return EXIT_SUCCESS;
 }
 
