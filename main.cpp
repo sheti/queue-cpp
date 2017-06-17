@@ -103,13 +103,13 @@ void accept_command() {
 			if( strcmp(head_name.c_str(), "Exec") == 0 ) {
 				if( (tasks_it = tasks.find(head_value.c_str())) != tasks.end()) {
 					// Старт комманды
-					log(MakeString() << "Start child: \"" << (*tasks_it).first << "\"", LOG_INFO);
+					log(MakeString() << "Start command: \"" << (*tasks_it).first << "\"", LOG_INFO);
 					std::string command = (*tasks_it).second;
 					int return_value = system(command.c_str());
 					log(MakeString() << "Child: \"" << (*tasks_it).first << "\" exited with value " << return_value, LOG_INFO);
 					// --
 				} else {
-					log(MakeString() << "Error command: " << head_value, LOG_ERR);
+					log(MakeString() << "Error command: \"" << head_value << "\"", LOG_ERR);
 				}
 			}
 		}
